@@ -1,19 +1,14 @@
 export interface PcmCaptureResult {
-  /** キャプチャした生PCMデータ（Float32, -1.0〜1.0） */
   chunks: Float32Array[]
-  /** 実際のサンプルレート（AudioContext から取得） */
   sampleRate: number
-  /** チャンネル数（常に1） */
   channels: 1
 }
 
-/**
- * AudioWorklet を使ってマイクストリームからPCMデータをキャプチャする。
- */
 export async function createPcmCapture(
   stream: MediaStream
 ): Promise<{
   stop: () => PcmCaptureResult
+  analyserNode: AnalyserNode
 }> {
   const ctx = new AudioContext({ sampleRate: 44100 })
 
@@ -44,8 +39,14 @@ registerProcessor('pcm-capture-processor', PcmCaptureProcessor);
   URL.revokeObjectURL(url)
 
   const source = ctx.createMediaStreamSource(stream)
+
+  const analyser = ctx.createAnalyser()
+  analyser.fftSize = 2048
+
   const workletNode = new AudioWorkletNode(ctx, 'pcm-capture-processor')
-  source.connect(workletNode)
+
+  source.connect(analyser)
+  analyser.connect(workletNode)
 
   const chunks: Float32Array[] = []
 
@@ -54,17 +55,14 @@ registerProcessor('pcm-capture-processor', PcmCaptureProcessor);
   }
 
   return {
+    analyserNode: analyser,
     stop(): PcmCaptureResult {
       workletNode.port.postMessage('stop')
       source.disconnect()
+      analyser.disconnect()
       workletNode.disconnect()
       void ctx.close()
-
-      return {
-        chunks,
-        sampleRate: ctx.sampleRate,
-        channels: 1
-      }
+      return { chunks, sampleRate: ctx.sampleRate, channels: 1 }
     }
   }
 }

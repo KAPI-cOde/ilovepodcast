@@ -1,7 +1,10 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { detectFfBins, type FfStatus } from './ffmpeg'
+
+let ffStatus: FfStatus | null = null
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -37,28 +40,36 @@ function createWindow(): void {
 
 ipcMain.handle(
   'save-wav-file',
-  async (_event, arrayBuffer: ArrayBuffer): Promise<string | null> => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (!win) return null
+  async (_event, arrayBuffer: ArrayBuffer): Promise<string> => {
+    const recordingsDir = join(app.getPath('userData'), 'recordings')
+    await mkdir(recordingsDir, { recursive: true })
 
-    const { canceled, filePath } = await dialog.showSaveDialog(win, {
-      title: '録音を保存',
-      defaultPath: `recording-${Date.now()}.wav`,
-      filters: [{ name: 'WAV Audio', extensions: ['wav'] }]
-    })
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const fileName = `rec_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.wav`
 
-    if (canceled || !filePath) return null
-
+    const filePath = join(recordingsDir, fileName)
     await writeFile(filePath, Buffer.from(arrayBuffer))
     return filePath
   }
 )
 
+ipcMain.handle('get-ff-status', async (): Promise<FfStatus> => {
+  if (!ffStatus) {
+    ffStatus = await detectFfBins()
+  }
+  return ffStatus
+})
+
 // ── アプリケーション起動 ───────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.ilovepodcast')
-  app.on('browser-window-created', (_, window) => {
+
+  // ffmpeg パス検出（起動時に1回だけ）
+  ffStatus = await detectFfBins()
+
+  app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)
   })
   createWindow()

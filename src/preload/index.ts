@@ -3,7 +3,10 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 const podcastAPI = {
   saveWavFile: (arrayBuffer: ArrayBuffer): Promise<string | null> =>
-    ipcRenderer.invoke('save-wav-file', arrayBuffer)
+    ipcRenderer.invoke('save-wav-file', arrayBuffer),
+
+  getFfStatus: (): Promise<any> =>
+    ipcRenderer.invoke('get-ff-status'),
 }
 
 if (process.contextIsolated) {
